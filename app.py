@@ -1,3 +1,4 @@
+import yfinance as yf
 """
 Flask Web Application for Indian Stock Market Predictor.
 Provides a user-friendly interface for stock analysis and predictions.
@@ -34,6 +35,26 @@ predictor = StockPredictor()
 # Global variables to store current data and models
 current_data = {}
 trained_models = {}
+
+# Route to fetch live stock price for a symbol (must be after app is defined)
+@app.route('/api/live_price/<symbol>')
+def live_price(symbol):
+    """Fetch the latest live price for a given stock symbol using yfinance."""
+    try:
+        # Ensure symbol is in Yahoo format (e.g., RELIANCE.BO for BSE, RELIANCE.NS for NSE)
+        if '.' not in symbol:
+            symbol += '.NS'  # Default to NSE if not specified
+        ticker = yf.Ticker(symbol)
+        price = ticker.fast_info.get('last_price')
+        if price is None:
+            # Fallback to regular market price
+            price = ticker.info.get('regularMarketPrice')
+        if price is None:
+            return jsonify({'error': 'Price not available'}), 404
+        return jsonify({'symbol': symbol, 'price': price})
+    except Exception as e:
+        logger.error(f"Error fetching live price for {symbol}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():

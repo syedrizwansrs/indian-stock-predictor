@@ -73,8 +73,8 @@ window.stocks = window.stocks.map(s => ({ symbol: s }));
                     <div class="card-body">
                         <div class="row">
                             <div class="col-6">
-                                <small class="text-muted">Current Price</small>
-                                <div class="h5">₹{{ "%.2f"|format(stock.latest_close) }}</div>
+                                <small class="text-muted">Live Price</small>
+                                <div class="h5" id="live-price-{{ stock.symbol|replace('.', '_') }}">₹{{ "%.2f"|format(stock.latest_close) }}</div>
                             </div>
                             <div class="col-6">
                                 <small class="text-muted">Volume</small>
@@ -200,6 +200,36 @@ window.stocks = window.stocks.map(s => ({ symbol: s }));
 
 {% block scripts %}
 <script>
+// Live price updater
+function fetchLivePrice(symbol) {
+    // Convert symbol to Yahoo Finance format
+    let apiSymbol = symbol;
+    if (symbol.endsWith('.BSE')) {
+        apiSymbol = symbol.replace('.BSE', '.BO');
+    } else if (symbol.endsWith('.NSE')) {
+        apiSymbol = symbol.replace('.NSE', '.NS');
+    } else if (!symbol.includes('.')) {
+        apiSymbol = symbol + '.NS';
+    }
+    fetch(`/api/live_price/${apiSymbol}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.price !== undefined) {
+                document.getElementById(`live-price-${symbol.replace('.', '_')}`).textContent = `₹${parseFloat(data.price).toFixed(2)}`;
+            }
+        })
+        .catch(() => {});
+}
+
+function startLivePriceUpdates() {
+    if (!window.stocks) return;
+    window.stocks.forEach(s => {
+        fetchLivePrice(s.symbol);
+        setInterval(() => fetchLivePrice(s.symbol), 30000); // update every 30s
+    });
+}
+
+document.addEventListener('DOMContentLoaded', startLivePriceUpdates);
 let currentSymbol = '';
 
 function refreshAll() {

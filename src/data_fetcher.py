@@ -1,3 +1,36 @@
+    def fetch_intraday_yfinance(self, symbol: str, interval: str = '15m', period: str = '2d') -> Optional[pd.DataFrame]:
+        """
+        Fetch intraday (minute-level) data from Yahoo Finance.
+        Args:
+            symbol (str): Stock symbol (e.g., 'RELIANCE.NS' for NSE)
+            interval (str): Data interval ('1m', '5m', '15m', '30m', '60m')
+            period (str): Data period (e.g., '1d', '5d', '60d', '2d')
+        Returns:
+            pd.DataFrame: Intraday OHLCV data
+        """
+        try:
+            # Convert to Yahoo Finance format
+            if '.BSE' in symbol:
+                yf_symbol = symbol.replace('.BSE', '.BO')
+            elif '.NSE' in symbol:
+                yf_symbol = symbol.replace('.NSE', '.NS')
+            else:
+                yf_symbol = f"{symbol}.NS"  # Default to NSE
+
+            logger.info(f"Fetching intraday data for {yf_symbol} interval={interval} period={period} from Yahoo Finance...")
+            ticker = yf.Ticker(yf_symbol)
+            data = ticker.history(interval=interval, period=period)
+            if data.empty:
+                logger.warning(f"No intraday data found for {yf_symbol}")
+                return None
+            data.columns = [col.lower() for col in data.columns]
+            data.index.name = 'datetime'
+            data = data[['open', 'high', 'low', 'close', 'volume']]
+            logger.info(f"Successfully fetched {len(data)} intraday records for {symbol}")
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching intraday data from Yahoo Finance for {symbol}: {str(e)}")
+            return None
 """
 Data Acquisition Module for Indian Stock Market Data.
 Fetches historical OHLCV data using Alpha Vantage API and stores it locally.
