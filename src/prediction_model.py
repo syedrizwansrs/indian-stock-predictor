@@ -620,6 +620,35 @@ class StockPredictor:
             importance_summary[model_name] = importance.head(top_n)
         
         return importance_summary
+    
+    def train_models(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Train all models on the given data.
+        
+        Args:
+            data (pd.DataFrame): Stock data with features and target
+            
+        Returns:
+            Dict: Dictionary of trained models
+        """
+        try:
+            logger.info("Starting model training process...")
+            
+            # Prepare features and target
+            X_train, X_test, y_train, y_test, feature_cols = self.prepare_data(data)
+            
+            if len(X_train) < 30:
+                raise ValueError("Insufficient data for training. Need at least 30 samples.")
+            
+            # Train all models
+            trained_models = self.train_all_models(X_train, X_test, y_train, y_test)
+            
+            logger.info(f"Successfully trained {len(trained_models)} models")
+            return trained_models
+            
+        except Exception as e:
+            logger.error(f"Error training models: {str(e)}")
+            raise
 
 # Example usage
 if __name__ == "__main__":

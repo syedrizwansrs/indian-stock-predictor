@@ -36,34 +36,24 @@ predictor = StockPredictor()
 current_data = {}
 trained_models = {}
 
-def to_yahoo_symbol(symbol):
-    """Convert a stock symbol to Yahoo Finance format."""
-    symbol = symbol.strip().upper()
-    if symbol.endswith('.BSE'):
-        return symbol.replace('.BSE', '.BO')
-    elif symbol.endswith('.NSE'):
-        return symbol.replace('.NSE', '.NS')
-    elif not symbol.endswith(('.NS', '.BO')) and '.' not in symbol:
-        return symbol + '.NS'  # Default to NSE
-    return symbol
-
 @app.route('/api/predict_15min/<symbol>')
 def predict_15min(symbol):
     """Fetch intraday data and predict the next 15-minute close price."""
     try:
-        # Validate input symbol
-        if not symbol or symbol.strip() == '' or symbol.strip().upper() in ['.NS', '.BO']:
-            return jsonify({'error': 'Invalid symbol provided'}), 400
-        yf_symbol = to_yahoo_symbol(symbol)
-        logger.info(f"Converting symbol {symbol} to Yahoo Finance format: {yf_symbol}")
         # Fetch 15-min interval data for the last 2 days
-        df = data_fetcher.fetch_intraday_yfinance(yf_symbol, interval='15m', period='2d')
+        df = data_fetcher.fetch_intraday_yfinance(symbol, interval='15m', period='2d')
         if df is None or len(df) < 20:
             return jsonify({'error': 'Not enough intraday data for prediction.'}), 400
+
+        # Simple prediction: use the last close as the prediction (placeholder for ML model)
         last_close = df['close'].iloc[-1]
+        # Optionally, use a simple moving average of last 4 intervals (1 hour)
         sma_1h = df['close'].iloc[-4:].mean()
+
+        # Timestamp for next 15-min interval
         last_time = df.index[-1]
         next_time = last_time + pd.Timedelta(minutes=15)
+
         return jsonify({
             'symbol': symbol,
             'last_close': last_close,
@@ -79,17 +69,17 @@ def predict_15min(symbol):
 def live_price(symbol):
     """Fetch the latest live price for a given stock symbol using yfinance."""
     try:
-        if not symbol or symbol.strip() == '' or symbol.strip().upper() in ['.NS', '.BO']:
-            return jsonify({'error': 'Invalid symbol provided'}), 400
-        yf_symbol = to_yahoo_symbol(symbol)
-        logger.info(f"Fetching live price for symbol {symbol} -> {yf_symbol}")
-        ticker = yf.Ticker(yf_symbol)
+        # Ensure symbol is in Yahoo format (e.g., RELIANCE.BO for BSE, RELIANCE.NS for NSE)
+        if '.' not in symbol:
+            symbol += '.NS'  # Default to NSE if not specified
+        ticker = yf.Ticker(symbol)
         price = ticker.fast_info.get('last_price')
         if price is None:
+            # Fallback to regular market price
             price = ticker.info.get('regularMarketPrice')
         if price is None:
             return jsonify({'error': 'Price not available'}), 404
-        return jsonify({'symbol': yf_symbol, 'price': price})
+        return jsonify({'symbol': symbol, 'price': price})
     except Exception as e:
         logger.error(f"Error fetching live price for {symbol}: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -163,40 +153,23 @@ def analysis(symbol):
         
         # Get latest values for display
         latest = data.tail(1).iloc[0]
-        # Calculate daily change
-        if len(data) > 1:
-            prev_close = data['close'].iloc[-2]
-            change_val = latest['close'] - prev_close
-            change_pct = (change_val / prev_close) * 100
-        else:
-            change_val = 0
-            change_pct = 0
-        # Format change as string with sign for template logic
-        if change_val > 0:
-            change_str = f"+{change_val:.2f}"
-        elif change_val < 0:
-            change_str = f"{change_val:.2f}"
-        else:
-            change_str = "0.00"
+        
         stock_info = {
             'symbol': symbol,
-            'close': f"{latest['close']:.2f}",
-            'volume': f"{int(latest['volume']):,}",
+            'latest_close': latest['close'],
+            'latest_volume': latest['volume'],
             'latest_date': data.index[-1].strftime('%Y-%m-%d'),
-            'total_records': len(data),
-            'change': change_str,
-            'change_pct': change_pct
+            'total_records': len(data)
         }
-        # Add technical indicators if available, round RSI to 2 decimals
+        
+        # Add technical indicators if available
         for indicator in ['RSI', 'MACD', 'BB_upper', 'BB_lower', 'SMA_20', 'EMA_12']:
             if indicator in latest:
-                if indicator == 'RSI':
-                    stock_info['rsi'] = f"{latest['RSI']:.2f}"
-                else:
-                    stock_info[indicator.lower()] = latest[indicator]
+                stock_info[indicator.lower()] = latest[indicator]
+        
         return render_template('analysis.html', 
                              charts=charts_json, 
-                             summary=stock_info)
+                             stock=stock_info)
         
     except Exception as e:
         logger.error(f"Error in analysis: {str(e)}")

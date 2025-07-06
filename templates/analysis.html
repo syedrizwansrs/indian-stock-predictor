@@ -61,6 +61,42 @@
             </div>
             <div class="col-md-2 col-sm-4">
                 <div class="metric-card">
+                    <div class="metric-value" id="analysis-15min-pred">Loading...</div>
+                    <div class="metric-label">15-min Prediction</div>
+                </div>
+            </div>
+<script>
+// 15-min prediction for analysis page
+function fetchAnalysis15MinPrediction(symbol) {
+    let apiSymbol = symbol;
+    if (symbol.endsWith('.BSE')) {
+        apiSymbol = symbol.replace('.BSE', '.BO');
+    } else if (symbol.endsWith('.NSE')) {
+        apiSymbol = symbol.replace('.NSE', '.NS');
+    } else if (!symbol.includes('.')) {
+        apiSymbol = symbol + '.NS';
+    }
+    fetch(`/api/predict_15min/${apiSymbol}`)
+        .then(response => response.json())
+        .then(data => {
+            let el = document.getElementById('analysis-15min-pred');
+            if (data.prediction !== undefined) {
+                el.innerHTML = `₹${parseFloat(data.prediction).toFixed(2)}<br><small class='text-muted'>at ${data.predicted_time}</small>`;
+            } else {
+                el.innerHTML = `<span class='text-danger'>N/A</span>`;
+            }
+        })
+        .catch(() => {
+            let el = document.getElementById('analysis-15min-pred');
+            if (el) el.innerHTML = `<span class='text-danger'>N/A</span>`;
+        });
+}
+document.addEventListener('DOMContentLoaded', function() {
+    fetchAnalysis15MinPrediction("{{ symbol }}");
+});
+</script>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
                     <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">
                         <i class="fas fa-arrow-left me-1"></i>Back
                     </a>

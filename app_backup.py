@@ -1,3 +1,35 @@
+# Route to fetch and predict the next 15-minute price for a symbol (must be after app is defined)
+def register_15min_route(app, data_fetcher):
+    @app.route('/api/predict_15min/<symbol>')
+    def predict_15min(symbol):
+        """Fetch intraday data and predict the next 15-minute close price."""
+        try:
+            # Fetch 15-min interval data for the last 2 days
+            df = data_fetcher.fetch_intraday_yfinance(symbol, interval='15m', period='2d')
+            if df is None or len(df) < 20:
+                return jsonify({'error': 'Not enough intraday data for prediction.'}), 400
+
+            # Simple prediction: use the last close as the prediction (placeholder for ML model)
+            last_close = df['close'].iloc[-1]
+            # Optionally, use a simple moving average of last 4 intervals (1 hour)
+            sma_1h = df['close'].iloc[-4:].mean()
+
+            # Timestamp for next 15-min interval
+            last_time = df.index[-1]
+            next_time = last_time + pd.Timedelta(minutes=15)
+
+            return jsonify({
+                'symbol': symbol,
+                'last_close': last_close,
+                'sma_1h': sma_1h,
+                'predicted_time': next_time.strftime('%Y-%m-%d %H:%M'),
+                'prediction': sma_1h
+            })
+        except Exception as e:
+            logger.error(f"Error in 15-min prediction for {symbol}: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+
+import yfinance as yf
 """
 Flask Web Application for Indian Stock Market Predictor.
 Provides a user-friendly interface for stock analysis and predictions.
@@ -11,7 +43,6 @@ from datetime import datetime, timedelta
 import logging
 import traceback
 import os
-import yfinance as yf
 from src.data_fetcher import DataFetcher
 from src.technical_analysis import TechnicalAnalyzer
 from src.visualization import StockVisualizer
@@ -36,60 +67,24 @@ predictor = StockPredictor()
 current_data = {}
 trained_models = {}
 
-def to_yahoo_symbol(symbol):
-    """Convert a stock symbol to Yahoo Finance format."""
-    symbol = symbol.strip().upper()
-    if symbol.endswith('.BSE'):
-        return symbol.replace('.BSE', '.BO')
-    elif symbol.endswith('.NSE'):
-        return symbol.replace('.NSE', '.NS')
-    elif not symbol.endswith(('.NS', '.BO')) and '.' not in symbol:
-        return symbol + '.NS'  # Default to NSE
-    return symbol
+register_15min_route(app, data_fetcher)
 
-@app.route('/api/predict_15min/<symbol>')
-def predict_15min(symbol):
-    """Fetch intraday data and predict the next 15-minute close price."""
-    try:
-        # Validate input symbol
-        if not symbol or symbol.strip() == '' or symbol.strip().upper() in ['.NS', '.BO']:
-            return jsonify({'error': 'Invalid symbol provided'}), 400
-        yf_symbol = to_yahoo_symbol(symbol)
-        logger.info(f"Converting symbol {symbol} to Yahoo Finance format: {yf_symbol}")
-        # Fetch 15-min interval data for the last 2 days
-        df = data_fetcher.fetch_intraday_yfinance(yf_symbol, interval='15m', period='2d')
-        if df is None or len(df) < 20:
-            return jsonify({'error': 'Not enough intraday data for prediction.'}), 400
-        last_close = df['close'].iloc[-1]
-        sma_1h = df['close'].iloc[-4:].mean()
-        last_time = df.index[-1]
-        next_time = last_time + pd.Timedelta(minutes=15)
-        return jsonify({
-            'symbol': symbol,
-            'last_close': last_close,
-            'sma_1h': sma_1h,
-            'predicted_time': next_time.strftime('%Y-%m-%d %H:%M'),
-            'prediction': sma_1h
-        })
-    except Exception as e:
-        logger.error(f"Error in 15-min prediction for {symbol}: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
+# Route to fetch live stock price for a symbol (must be after app is defined)
 @app.route('/api/live_price/<symbol>')
 def live_price(symbol):
     """Fetch the latest live price for a given stock symbol using yfinance."""
     try:
-        if not symbol or symbol.strip() == '' or symbol.strip().upper() in ['.NS', '.BO']:
-            return jsonify({'error': 'Invalid symbol provided'}), 400
-        yf_symbol = to_yahoo_symbol(symbol)
-        logger.info(f"Fetching live price for symbol {symbol} -> {yf_symbol}")
-        ticker = yf.Ticker(yf_symbol)
+        # Ensure symbol is in Yahoo format (e.g., RELIANCE.BO for BSE, RELIANCE.NS for NSE)
+        if '.' not in symbol:
+            symbol += '.NS'  # Default to NSE if not specified
+        ticker = yf.Ticker(symbol)
         price = ticker.fast_info.get('last_price')
         if price is None:
+            # Fallback to regular market price
             price = ticker.info.get('regularMarketPrice')
         if price is None:
             return jsonify({'error': 'Price not available'}), 404
-        return jsonify({'symbol': yf_symbol, 'price': price})
+        return jsonify({'symbol': symbol, 'price': price})
     except Exception as e:
         logger.error(f"Error fetching live price for {symbol}: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -153,7 +148,7 @@ def analysis(symbol):
         volatility_chart = visualizer.create_volatility_chart(data, symbol)
         
         # Convert charts to JSON
-        charts_json = {
+        charts = {
             'candlestick': json.dumps(candlestick_chart, cls=plotly.utils.PlotlyJSONEncoder),
             'indicators': json.dumps(indicators_chart, cls=plotly.utils.PlotlyJSONEncoder),
             'correlation': json.dumps(correlation_chart, cls=plotly.utils.PlotlyJSONEncoder),
@@ -161,77 +156,57 @@ def analysis(symbol):
             'volatility': json.dumps(volatility_chart, cls=plotly.utils.PlotlyJSONEncoder)
         }
         
-        # Get latest values for display
-        latest = data.tail(1).iloc[0]
-        # Calculate daily change
-        if len(data) > 1:
-            prev_close = data['close'].iloc[-2]
-            change_val = latest['close'] - prev_close
-            change_pct = (change_val / prev_close) * 100
-        else:
-            change_val = 0
-            change_pct = 0
-        # Format change as string with sign for template logic
-        if change_val > 0:
-            change_str = f"+{change_val:.2f}"
-        elif change_val < 0:
-            change_str = f"{change_val:.2f}"
-        else:
-            change_str = "0.00"
-        stock_info = {
+        # Get latest data summary
+        latest_data = data.tail(1).iloc[0]
+        summary = {
             'symbol': symbol,
-            'close': f"{latest['close']:.2f}",
-            'volume': f"{int(latest['volume']):,}",
-            'latest_date': data.index[-1].strftime('%Y-%m-%d'),
-            'total_records': len(data),
-            'change': change_str,
-            'change_pct': change_pct
+            'date': data.index[-1].strftime('%Y-%m-%d'),
+            'close': f"₹{latest_data['close']:.2f}",
+            'change': f"{latest_data.get('Returns', 0) * 100:.2f}%",
+            'volume': f"{latest_data['volume']:,.0f}",
+            'rsi': f"{latest_data.get('RSI', 0):.2f}" if 'RSI' in data.columns else 'N/A',
+            'total_records': len(data)
         }
-        # Add technical indicators if available, round RSI to 2 decimals
-        for indicator in ['RSI', 'MACD', 'BB_upper', 'BB_lower', 'SMA_20', 'EMA_12']:
-            if indicator in latest:
-                if indicator == 'RSI':
-                    stock_info['rsi'] = f"{latest['RSI']:.2f}"
-                else:
-                    stock_info[indicator.lower()] = latest[indicator]
+        
         return render_template('analysis.html', 
-                             charts=charts_json, 
-                             summary=stock_info)
+                             symbol=symbol, 
+                             charts=charts, 
+                             summary=summary)
         
     except Exception as e:
-        logger.error(f"Error in analysis: {str(e)}")
+        logger.error(f"Error in analysis page: {str(e)}")
         flash(f'Error loading analysis: {str(e)}', 'error')
         return redirect(url_for('index'))
 
 @app.route('/train_models', methods=['POST'])
 def train_models():
-    """Train machine learning models."""
+    """Train ML models for prediction."""
     try:
         symbol = request.form.get('symbol')
-        
         if not symbol or symbol not in current_data:
-            return jsonify({'error': 'No data available for the selected symbol'})
+            return jsonify({'error': 'No data available for training'})
         
         data = current_data[symbol]
         
-        if len(data) < 50:
-            return jsonify({'error': 'Insufficient data for training. Need at least 50 records.'})
-        
-        logger.info(f"Training models for {symbol}")
+        # Prepare data for ML
+        X_train, X_test, y_train, y_test, feature_names = predictor.prepare_data(data)
         
         # Train models
-        models = predictor.train_models(data)
-        
-        if not models:
-            return jsonify({'error': 'Failed to train models'})
-        
-        # Store trained models
+        models = predictor.train_all_models(X_train, X_test, y_train, y_test)
         trained_models[symbol] = models
+        
+        # Get model performance comparison
+        comparison = predictor.get_model_comparison()
+        
+        # Get feature importance
+        importance = predictor.get_feature_importance_summary(top_n=10)
         
         return jsonify({
             'success': True,
-            'models_trained': list(models.keys()),
-            'data_points': len(data)
+            'models_trained': len(models),
+            'performance': comparison.to_dict(),
+            'feature_importance': {k: v.to_dict() for k, v in importance.items()},
+            'best_model': comparison.index[0] if not comparison.empty else None
         })
         
     except Exception as e:
@@ -261,6 +236,8 @@ def predict():
         prediction_result = predictor.predict_next_day(model, data, model_name)
 
         # Save prediction to database
+        from src.data_fetcher import DataFetcher
+        data_fetcher = DataFetcher()
         data_fetcher.save_prediction(
             symbol=symbol,
             date=str(prediction_result['timestamp'].date()),
@@ -285,26 +262,24 @@ def predict():
         logger.error(f"Error making prediction: {str(e)}")
         return jsonify({'error': str(e)})
 
+# Route to fetch past predictions for a symbol (must be at top-level, not inside a function)
 @app.route('/past_predictions/<symbol>')
 def past_predictions(symbol):
-    """Get past predictions for a symbol."""
-    try:
-        rows = data_fetcher.get_past_predictions(symbol)
-        # Format for JSON
-        predictions = [
-            {
-                'symbol': symbol,
-                'date': r[0],
-                'model': r[1],
-                'direction': r[2],
-                'confidence': r[3],
-                'created_at': r[4]
-            } for r in rows
-        ]
-        return jsonify({'predictions': predictions})
-    except Exception as e:
-        logger.error(f"Error fetching past predictions for {symbol}: {str(e)}")
-        return jsonify({'error': str(e)})
+    from src.data_fetcher import DataFetcher
+    data_fetcher = DataFetcher()
+    rows = data_fetcher.get_past_predictions(symbol)
+    # Format for JSON
+    predictions = [
+        {
+            'symbol': symbol,
+            'date': r[0],
+            'model': r[1],
+            'direction': r[2],
+            'confidence': r[3],
+            'created_at': r[4]
+        } for r in rows
+    ]
+    return jsonify({'predictions': predictions})
 
 @app.route('/api/stock_info/<symbol>')
 def stock_info(symbol):
@@ -325,53 +300,50 @@ def stock_info(symbol):
             'data_range': {
                 'start': data.index[0].isoformat(),
                 'end': data.index[-1].isoformat()
-            },
-            'has_indicators': 'RSI' in data.columns
+            }
         }
         
         # Add technical indicators if available
-        for indicator in ['RSI', 'MACD', 'BB_upper', 'BB_lower']:
-            if indicator in latest:
-                info[indicator.lower()] = float(latest[indicator])
+        if 'RSI' in data.columns:
+            info['rsi'] = float(latest['RSI'])
+        if 'SMA_50' in data.columns:
+            info['sma_50'] = float(latest['SMA_50'])
+        if 'SMA_200' in data.columns:
+            info['sma_200'] = float(latest['SMA_200'])
         
         return jsonify(info)
         
     except Exception as e:
-        logger.error(f"Error getting stock info: {str(e)}")
         return jsonify({'error': str(e)})
 
 @app.route('/bulk_fetch', methods=['POST'])
 def bulk_fetch():
     """Fetch data for multiple stocks."""
     try:
-        symbols = request.form.get('symbols', '').upper().strip()
+        symbols = request.form.getlist('symbols')
         if not symbols:
-            return jsonify({'error': 'No symbols provided'})
+            symbols = Config.DEFAULT_STOCKS[:5]  # Limit to 5 for demo
         
-        symbols_list = [s.strip() for s in symbols.split(',') if s.strip()]
-        results = {'success': [], 'failed': []}
+        logger.info(f"Bulk fetching data for {len(symbols)} symbols")
         
-        for symbol in symbols_list:
+        results = {}
+        for symbol in symbols:
             try:
-                # Add default exchange if not specified
-                if '.' not in symbol:
-                    symbol += '.BSE'
-                
-                logger.info(f"Bulk fetching data for {symbol}")
                 data = data_fetcher.update_stock_data(symbol)
-                
                 if data is not None and not data.empty:
                     processed_data = technical_analyzer.process_stock_data(data)
                     current_data[symbol] = processed_data
-                    results['success'].append(symbol)
+                    results[symbol] = {'status': 'success', 'records': len(data)}
                 else:
-                    results['failed'].append(symbol)
-                    
+                    results[symbol] = {'status': 'failed', 'error': 'No data available'}
             except Exception as e:
-                logger.error(f"Error fetching {symbol}: {str(e)}")
-                results['failed'].append(symbol)
+                results[symbol] = {'status': 'failed', 'error': str(e)}
         
-        return jsonify(results)
+        return jsonify({
+            'success': True,
+            'results': results,
+            'total_processed': len([r for r in results.values() if r['status'] == 'success'])
+        })
         
     except Exception as e:
         logger.error(f"Error in bulk fetch: {str(e)}")
