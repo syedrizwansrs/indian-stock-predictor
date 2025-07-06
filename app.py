@@ -107,28 +107,24 @@ def fetch_data():
         if not symbol:
             flash('Please enter a stock symbol', 'error')
             return redirect(url_for('index'))
-        
-        # Add default exchange if not specified
+        # Normalize to .BSE or .NSE for all backend operations
         if '.' not in symbol:
-            symbol += '.BSE'
-        
-        logger.info(f"Fetching data for {symbol}")
-        
-        # Try to load existing data first, then fetch if needed
-        data = data_fetcher.update_stock_data(symbol)
-        
+            canonical_symbol = symbol + '.BSE'
+        elif symbol.endswith('.NS'):
+            canonical_symbol = symbol.replace('.NS', '.NSE')
+        elif symbol.endswith('.BO'):
+            canonical_symbol = symbol.replace('.BO', '.BSE')
+        else:
+            canonical_symbol = symbol
+        logger.info(f"Fetching data for {canonical_symbol}")
+        data = data_fetcher.update_stock_data(canonical_symbol)
         if data is None or data.empty:
-            flash(f'Could not fetch data for {symbol}', 'error')
+            flash(f'Could not fetch data for {canonical_symbol}', 'error')
             return redirect(url_for('index'))
-        
-        # Process data with technical indicators
         processed_data = technical_analyzer.process_stock_data(data)
-        
-        # Store in global variable
-        current_data[symbol] = processed_data
-        
-        flash(f'Successfully loaded {len(data)} records for {symbol}', 'success')
-        return redirect(url_for('analysis', symbol=symbol))
+        current_data[canonical_symbol] = processed_data
+        flash(f'Successfully loaded {len(data)} records for {canonical_symbol}', 'success')
+        return redirect(url_for('analysis', symbol=canonical_symbol))
         
     except Exception as e:
         logger.error(f"Error fetching data: {str(e)}")
@@ -139,11 +135,16 @@ def fetch_data():
 def analysis(symbol):
     """Analysis page for a specific stock."""
     try:
-        if symbol not in current_data:
+        # Normalize symbol to canonical for lookup
+        canonical_symbol = symbol.upper()
+        if canonical_symbol.endswith('.NS'):
+            canonical_symbol = canonical_symbol.replace('.NS', '.NSE')
+        elif canonical_symbol.endswith('.BO'):
+            canonical_symbol = canonical_symbol.replace('.BO', '.BSE')
+        if canonical_symbol not in current_data:
             flash(f'No data available for {symbol}. Please fetch data first.', 'warning')
             return redirect(url_for('index'))
-        
-        data = current_data[symbol]
+        data = current_data[canonical_symbol]
         
         # Create charts
         candlestick_chart = visualizer.create_candlestick_chart(data, symbol)
@@ -208,26 +209,23 @@ def train_models():
     """Train machine learning models."""
     try:
         symbol = request.form.get('symbol')
-        
+        logger.info(f"[TRAIN] Received train_models request for symbol={symbol}")
         if not symbol or symbol not in current_data:
+            logger.warning(f"[TRAIN] No data available for {symbol}")
             return jsonify({'error': 'No data available for the selected symbol'})
-        
         data = current_data[symbol]
-        
         if len(data) < 50:
+            logger.warning(f"[TRAIN] Insufficient data for {symbol}: {len(data)} records")
             return jsonify({'error': 'Insufficient data for training. Need at least 50 records.'})
-        
-        logger.info(f"Training models for {symbol}")
-        
+        logger.info(f"[TRAIN] Starting model training for {symbol} with {len(data)} records")
         # Train models
         models = predictor.train_models(data)
-        
         if not models:
+            logger.error(f"[TRAIN] Failed to train models for {symbol}")
             return jsonify({'error': 'Failed to train models'})
-        
         # Store trained models
         trained_models[symbol] = models
-        
+        logger.info(f"[TRAIN] Trained and stored models for {symbol}: {list(models.keys())}")
         return jsonify({
             'success': True,
             'models_trained': list(models.keys()),
@@ -244,22 +242,30 @@ def predict():
     try:
         symbol = request.form.get('symbol')
         model_name = request.form.get('model_name', 'random_forest')
-        
-        if not symbol or symbol not in current_data:
+        logger.info(f"[PREDICT] Received prediction request for symbol={symbol}, model={model_name}")
+        # Normalize to canonical symbol for all lookups
+        canonical_symbol = symbol.upper()
+        if canonical_symbol.endswith('.NS'):
+            canonical_symbol = canonical_symbol.replace('.NS', '.NSE')
+        elif canonical_symbol.endswith('.BO'):
+            canonical_symbol = canonical_symbol.replace('.BO', '.BSE')
+        logger.info(f"[PREDICT] Normalized symbol: {canonical_symbol}")
+        if not canonical_symbol or canonical_symbol not in current_data:
+            logger.warning(f"[PREDICT] No data available for {canonical_symbol}")
             return jsonify({'error': 'No data available'})
-        
-        if symbol not in trained_models or not trained_models[symbol]:
+        if canonical_symbol not in trained_models or not trained_models[canonical_symbol]:
+            logger.warning(f"[PREDICT] No trained models for {canonical_symbol}")
             return jsonify({'error': 'No trained models available. Please train models first.'})
-        
-        if model_name not in trained_models[symbol]:
+        if model_name not in trained_models[canonical_symbol]:
+            logger.warning(f"[PREDICT] Model {model_name} not available for {canonical_symbol}")
             return jsonify({'error': f'Model {model_name} not available'})
-        
-        data = current_data[symbol]
-        model = trained_models[symbol][model_name]
-        
+        data = current_data[canonical_symbol]
+        model = trained_models[canonical_symbol][model_name]
+        symbol = canonical_symbol  # for downstream use
+        logger.info(f"[PREDICT] Running prediction for {symbol} using {model_name}")
         # Make prediction
         prediction_result = predictor.predict_next_day(model, data, model_name)
-
+        logger.info(f"[PREDICT] Prediction result: {prediction_result}")
         # Save prediction to database
         data_fetcher.save_prediction(
             symbol=symbol,
@@ -268,14 +274,14 @@ def predict():
             direction=prediction_result['direction'],
             confidence=prediction_result['confidence']
         )
-
+        logger.info(f"[PREDICT] Saved prediction for {symbol} on {prediction_result['timestamp'].date()} using {model_name}")
         # Create prediction chart
         predictions_series = pd.Series([prediction_result['prediction']], 
                                      index=[data.index[-1]])
         prediction_chart = visualizer.create_prediction_chart(
             data.tail(30), predictions_series, symbol, model_name
         )
-
+        logger.info(f"[PREDICT] Created prediction chart for {symbol} using {model_name}")
         return jsonify({
             'success': True,
             'prediction': prediction_result,
@@ -353,20 +359,23 @@ def bulk_fetch():
         
         for symbol in symbols_list:
             try:
-                # Add default exchange if not specified
+                # Normalize to .BSE or .NSE for all backend operations
                 if '.' not in symbol:
-                    symbol += '.BSE'
-                
-                logger.info(f"Bulk fetching data for {symbol}")
-                data = data_fetcher.update_stock_data(symbol)
-                
+                    canonical_symbol = symbol + '.BSE'
+                elif symbol.endswith('.NS'):
+                    canonical_symbol = symbol.replace('.NS', '.NSE')
+                elif symbol.endswith('.BO'):
+                    canonical_symbol = symbol.replace('.BO', '.BSE')
+                else:
+                    canonical_symbol = symbol
+                logger.info(f"Bulk fetching data for {canonical_symbol}")
+                data = data_fetcher.update_stock_data(canonical_symbol)
                 if data is not None and not data.empty:
                     processed_data = technical_analyzer.process_stock_data(data)
-                    current_data[symbol] = processed_data
-                    results['success'].append(symbol)
+                    current_data[canonical_symbol] = processed_data
+                    results['success'].append(canonical_symbol)
                 else:
-                    results['failed'].append(symbol)
-                    
+                    results['failed'].append(canonical_symbol)
             except Exception as e:
                 logger.error(f"Error fetching {symbol}: {str(e)}")
                 results['failed'].append(symbol)
@@ -385,15 +394,16 @@ def dashboard():
         
         for symbol, data in current_data.items():
             latest = data.tail(1).iloc[0]
-            stocks_info.append({
+            stock_info = {
                 'symbol': symbol,
-                'latest_close': latest['close'],
-                'change_pct': latest.get('Returns', 0) * 100,
-                'volume': latest['volume'],
-                'rsi': latest.get('RSI', None),
+                'latest_close': float(latest['close']) if 'close' in latest else None,
+                'change_pct': float(latest.get('Returns', 0)) * 100 if 'Returns' in latest else 0,
+                'volume': int(latest['volume']) if 'volume' in latest else None,
+                'rsi': float(latest['RSI']) if 'RSI' in latest and latest['RSI'] is not None else None,
                 'records': len(data),
                 'last_updated': data.index[-1].strftime('%Y-%m-%d')
-            })
+            }
+            stocks_info.append(stock_info)
         
         return render_template('dashboard.html', stocks=stocks_info)
         
