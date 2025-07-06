@@ -1,3 +1,40 @@
+## 🗃️ Data Caching & Refresh Control
+
+The application caches all fetched stock data in a persistent SQLite database (`data/stocks.db`).
+By default, it loads recent data from the cache and only fetches new data if the cache is missing or outdated (older than 7 days).
+
+### Forcing a Data Refresh (Bypassing the Cache)
+
+You can force the application to fetch fresh data from the API and update the cache by using the `force_refresh` parameter in the `update_stock_data` method:
+
+```python
+from src.data_fetcher import DataFetcher
+fetcher = DataFetcher()
+symbol = "RELIANCE.BSE"
+# Force a fresh fetch from the API, ignoring the cache
+data = fetcher.update_stock_data(symbol, force_refresh=True)
+```
+
+### Manual Cache Management
+
+- **Delete the database file**: To clear all cached data, simply delete `data/stocks.db` and it will be recreated on the next run.
+- **Delete data for a specific symbol**: You can add a method to `DataFetcher` to remove data for a single stock (see below for a sample implementation).
+
+### Example: Clear Cache for a Symbol
+
+```python
+def clear_symbol_cache(self, symbol: str):
+    """Delete all cached data for a specific stock symbol."""
+    conn = sqlite3.connect(self.db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM stocks WHERE symbol = ?", (symbol,))
+    conn.commit()
+    conn.close()
+```
+
+Add this method to your `DataFetcher` class if you want fine-grained cache control.
+
+---
 # Indian Stock Market Analysis & Prediction System
 
 A comprehensive Python-based application that acquires historical stock data for the Indian market, performs technical analysis, visualizes charts, and attempts to predict future stock price movements using machine learning.

@@ -19,6 +19,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DataFetcher:
+    def clear_symbol_cache(self, symbol: str):
+        """
+        Delete all cached data for a specific stock symbol.
+        Args:
+            symbol (str): Stock symbol to clear from cache
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM stocks WHERE symbol = ?", (symbol,))
+            conn.commit()
+            conn.close()
+            logger.info(f"Cleared cache for symbol: {symbol}")
+        except Exception as e:
+            logger.error(f"Error clearing cache for {symbol}: {str(e)}")
     """Handles fetching and storing stock market data."""
     
     def __init__(self, api_key: str = None):
@@ -143,7 +158,7 @@ class DataFetcher:
     
     def save_to_database(self, symbol: str, data: pd.DataFrame):
         """
-        Save stock data to SQLite database.
+        Save stock data to SQLite database, preventing true duplicates.
         
         Args:
             symbol (str): Stock symbol
@@ -151,22 +166,47 @@ class DataFetcher:
         """
         try:
             conn = sqlite3.connect(self.db_path)
-            
+            cursor = conn.cursor()
             # Prepare data for insertion
             data_to_insert = data.copy()
             data_to_insert['symbol'] = symbol
             data_to_insert = data_to_insert.reset_index()
-            
-            # Insert data (ignore duplicates) - method='ignore' is not supported by pandas to_sql for sqlite
-            # Instead, use try/except for duplicate handling or use 'if_exists' and primary key constraints
-            try:
-                data_to_insert.to_sql('stocks', conn, if_exists='append', index=False)
-            except Exception as e:
-                logger.error(f"Error inserting data to database for {symbol}: {str(e)}")
-            
+            # Insert each row, skipping duplicates
+            inserted = 0
+            for _, row in data_to_insert.iterrows():
+                try:
+                    # Ensure date is a string in YYYY-MM-DD format
+                    date_val = row['date']
+                    if pd.isnull(date_val):
+                        date_str = None
+                    elif hasattr(date_val, 'strftime'):
+                        date_str = date_val.strftime('%Y-%m-%d')
+                    else:
+                        date_str = str(date_val)
+                    cursor.execute(
+                        """
+                        INSERT INTO stocks (symbol, date, open, high, low, close, volume)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row['symbol'],
+                            date_str,
+                            row['open'] if not pd.isnull(row['open']) else None,
+                            row['high'] if not pd.isnull(row['high']) else None,
+                            row['low'] if not pd.isnull(row['low']) else None,
+                            row['close'] if not pd.isnull(row['close']) else None,
+                            int(row['volume']) if not pd.isnull(row['volume']) else None
+                        )
+                    )
+                    inserted += 1
+                except sqlite3.IntegrityError:
+                    # Duplicate entry, skip
+                    continue
+                except Exception as e:
+                    logger.error(f"Error inserting row for {symbol} on {row['date']}: {str(e)}")
+            conn.commit()
             conn.close()
-            logger.info(f"Saved {len(data)} records for {symbol} to database")
-            
+            logger.info(f"Saved {inserted} new records for {symbol} to database (duplicates skipped)")
         except Exception as e:
             logger.error(f"Error saving data to database for {symbol}: {str(e)}")
     
@@ -294,26 +334,26 @@ class DataFetcher:
             logger.error(f"Error getting latest data date for {symbol}: {str(e)}")
             return None
     
-    def update_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
+    def update_stock_data(self, symbol: str, force_refresh: bool = False) -> Optional[pd.DataFrame]:
         """
-        Update stock data by fetching only missing recent data.
+        Update stock data by fetching only missing recent data, or force refresh from API.
         
         Args:
             symbol (str): Stock symbol
-            
+            force_refresh (bool): If True, always fetch fresh data from API and update cache.
         Returns:
             pd.DataFrame: Updated stock data
         """
+        if force_refresh:
+            logger.info(f"Force refresh enabled for {symbol}, fetching all historical data from API.")
+            return self.fetch_and_store_data(symbol)
         latest_date = self.get_latest_data_date(symbol)
-        
         if latest_date is None:
             # No existing data, fetch all
             logger.info(f"No existing data for {symbol}, fetching all historical data")
             return self.fetch_and_store_data(symbol)
-        
         # Check if data is recent (within last 7 days)
         days_old = (datetime.now() - latest_date).days
-        
         if days_old <= 7:
             logger.info(f"Data for {symbol} is recent ({days_old} days old), loading from database")
             return self.load_from_database(symbol)
