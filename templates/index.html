@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Indian Stock Market Predictor{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <!-- Welcome Section -->
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <h1 class="card-title">
+                    <i class="fas fa-chart-line text-primary me-2"></i>
+                    Indian Stock Market Predictor
+                </h1>
+                <p class="card-text lead">
+                    Advanced technical analysis and machine learning predictions for Indian equity markets
+                </p>
+                <p class="text-muted">
+                    Analyze NIFTY 50 and SENSEX 30 stocks with comprehensive technical indicators and AI-powered predictions
+                </p>
+            </div>
+        </div>
+
+        <!-- Stock Symbol Input -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-search me-2"></i>
+                    Analyze Stock
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('fetch_data') }}">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="symbol" class="form-label">Stock Symbol</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="symbol" 
+                                       name="symbol" 
+                                       placeholder="e.g., RELIANCE.BSE, TCS.NSE, or just RELIANCE"
+                                       required>
+                                <div class="form-text">
+                                    Enter stock symbol with exchange (e.g., RELIANCE.BSE) or just symbol (defaults to BSE)
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-download me-2"></i>
+                                Fetch & Analyze
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Quick Stock Selection -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-star me-2"></i>
+                    Popular Stocks
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">Click on any stock below for quick analysis:</p>
+                <div class="row">
+                    {% for stock in default_stocks %}
+                    <div class="col-md-4 col-sm-6 mb-2">
+                        <form method="POST" action="{{ url_for('fetch_data') }}" style="display: inline;">
+                            <input type="hidden" name="symbol" value="{{ stock }}">
+                            <button type="submit" class="btn btn-outline-primary btn-sm w-100">
+                                {{ stock }}
+                            </button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Fetch Option -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-layer-group me-2"></i>
+                    Bulk Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Fetch and analyze multiple stocks at once:</p>
+                <button type="button" class="btn btn-success" onclick="bulkFetch()">
+                    <i class="fas fa-download me-2"></i>
+                    Fetch Top 5 NIFTY Stocks
+                </button>
+                <button type="button" class="btn btn-info ms-2" onclick="showDashboard()">
+                    <i class="fas fa-tachometer-alt me-2"></i>
+                    View Dashboard
+                </button>
+            </div>
+        </div>
+
+        <!-- Features Section -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs me-2"></i>
+                    Features
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-chart-candlestick me-2 text-primary"></i>Technical Analysis</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li>• Candlestick charts with volume</li>
+                            <li>• Moving averages (SMA, EMA)</li>
+                            <li>• RSI, MACD, Bollinger Bands</li>
+                            <li>• Custom technical indicators</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-robot me-2 text-success"></i>Machine Learning</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li>• Random Forest prediction</li>
+                            <li>• XGBoost & LightGBM models</li>
+                            <li>• LSTM neural networks</li>
+                            <li>• Feature importance analysis</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-chart-line me-2 text-warning"></i>Visualization</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li>• Interactive Plotly charts</li>
+                            <li>• Correlation heatmaps</li>
+                            <li>• Returns distribution</li>
+                            <li>• Volatility analysis</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-database me-2 text-info"></i>Data Management</h6>
+                        <ul class="list-unstyled ms-3">
+                            <li>• Alpha Vantage & Yahoo Finance APIs</li>
+                            <li>• Local SQLite storage</li>
+                            <li>• Automatic data updates</li>
+                            <li>• Historical data analysis</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display: none;">
+    <div class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 id="loadingMessage">Processing...</h5>
+                    <p class="text-muted">Please wait while we fetch and process the data.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function bulkFetch() {
+    showLoading('Fetching multiple stocks...');
+    
+    fetch('/bulk_fetch', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            alert(`Successfully fetched ${data.total_processed} stocks. Check the dashboard for details.`);
+            window.location.href = '/dashboard';
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error occurred'));
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('Error: ' + error.message);
+    });
+}
+
+function showDashboard() {
+    window.location.href = '/dashboard';
+}
+
+// Show loading overlay when form is submitted
+document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', function() {
+        showLoading('Fetching stock data...');
+    });
+});
+</script>
+{% endblock %}

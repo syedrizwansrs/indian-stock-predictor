@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}{{ symbol }} Analysis - Indian Stock Market Predictor{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Stock Summary Header -->
+        <div class="stock-summary">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h2>{{ symbol }} - Stock Analysis</h2>
+                    <p class="mb-0">Last updated: {{ summary.date }}</p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-light" onclick="trainModels()">
+                            <i class="fas fa-brain me-1"></i>Train Models
+                        </button>
+                        <button type="button" class="btn btn-warning" onclick="makePrediction()">
+                            <i class="fas fa-crystal-ball me-1"></i>Predict
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="row mb-4">
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <div class="metric-value">{{ summary.close }}</div>
+                    <div class="metric-label">Close Price</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <div class="metric-value" style="color: {{ 'green' if summary.change.startswith('+') else 'red' }}">
+                        {{ summary.change }}
+                    </div>
+                    <div class="metric-label">Daily Change</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <div class="metric-value">{{ summary.volume }}</div>
+                    <div class="metric-label">Volume</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <div class="metric-value">{{ summary.rsi }}</div>
+                    <div class="metric-label">RSI</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <div class="metric-value">{{ summary.total_records }}</div>
+                    <div class="metric-label">Records</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <div class="metric-card">
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i>Back
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs mb-4" id="analysisTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="price-tab" data-bs-toggle="tab" data-bs-target="#price-content" type="button" role="tab">
+                    <i class="fas fa-chart-candlestick me-1"></i>Price Analysis
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="indicators-tab" data-bs-toggle="tab" data-bs-target="#indicators-content" type="button" role="tab">
+                    <i class="fas fa-chart-line me-1"></i>Technical Indicators
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="analysis-tab" data-bs-toggle="tab" data-bs-target="#analysis-content" type="button" role="tab">
+                    <i class="fas fa-analytics me-1"></i>Statistical Analysis
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="prediction-tab" data-bs-toggle="tab" data-bs-target="#prediction-content" type="button" role="tab">
+                    <i class="fas fa-crystal-ball me-1"></i>ML Predictions
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="analysisTabContent">
+            <!-- Price Analysis Tab -->
+            <div class="tab-pane fade show active" id="price-content" role="tabpanel">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-candlestick me-2"></i>Candlestick Chart with Technical Overlays</h5>
+                    <div id="candlestickChart"></div>
+                </div>
+                
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-area me-2"></i>Volatility Analysis</h5>
+                    <div id="volatilityChart"></div>
+                </div>
+            </div>
+
+            <!-- Technical Indicators Tab -->
+            <div class="tab-pane fade" id="indicators-content" role="tabpanel">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-line me-2"></i>Technical Indicators Overview</h5>
+                    <div id="indicatorsChart"></div>
+                </div>
+            </div>
+
+            <!-- Statistical Analysis Tab -->
+            <div class="tab-pane fade" id="analysis-content" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <h5><i class="fas fa-chart-bar me-2"></i>Returns Distribution</h5>
+                            <div id="returnsChart"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <h5><i class="fas fa-th me-2"></i>Correlation Matrix</h5>
+                            <div id="correlationChart"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ML Predictions Tab -->
+            <div class="tab-pane fade" id="prediction-content" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="chart-container">
+                            <h5><i class="fas fa-robot me-2"></i>Model Performance & Predictions</h5>
+                            <div id="predictionChart">
+                                <div class="text-center p-5">
+                                    <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                                    <h6>No models trained yet</h6>
+                                    <p class="text-muted">Click "Train Models" to start machine learning analysis</p>
+                                    <button class="btn btn-primary" onclick="trainModels()">
+                                        <i class="fas fa-brain me-1"></i>Train Models Now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="prediction-card mb-3" id="predictionResult" style="display: none;">
+                            <h6><i class="fas fa-crystal-ball me-2"></i>Next Day Prediction</h6>
+                            <div class="prediction-direction" id="predictionDirection">-</div>
+                            <p id="predictionDetails">Train models first</p>
+                            <small id="predictionConfidence">Confidence: -</small>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-cogs me-2"></i>Model Controls</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="modelSelect" class="form-label">Select Model:</label>
+                                    <select class="form-select" id="modelSelect">
+                                        <option value="random_forest">Random Forest</option>
+                                        <option value="xgboost">XGBoost</option>
+                                        <option value="lightgbm">LightGBM</option>
+                                        <option value="gradient_boosting">Gradient Boosting</option>
+                                    </select>
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-primary" onclick="trainModels()">
+                                        <i class="fas fa-brain me-1"></i>Train Models
+                                    </button>
+                                    <button class="btn btn-warning" onclick="makePrediction()">
+                                        <i class="fas fa-crystal-ball me-1"></i>Make Prediction
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mt-3" id="modelPerformance" style="display: none;">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Model Performance</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="performanceMetrics">
+                                    <!-- Performance metrics will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5 id="loadingText">Processing...</h5>
+                <p class="text-muted" id="loadingSubtext">This may take a few moments.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize charts when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Render all charts
+    renderCharts();
+});
+
+function renderCharts() {
+    // Candlestick Chart
+    const candlestickData = {{ charts.candlestick | safe }};
+    Plotly.newPlot('candlestickChart', candlestickData.data, candlestickData.layout, {responsive: true});
+    
+    // Technical Indicators Chart
+    const indicatorsData = {{ charts.indicators | safe }};
+    Plotly.newPlot('indicatorsChart', indicatorsData.data, indicatorsData.layout, {responsive: true});
+    
+    // Returns Distribution Chart
+    const returnsData = {{ charts.returns | safe }};
+    Plotly.newPlot('returnsChart', returnsData.data, returnsData.layout, {responsive: true});
+    
+    // Correlation Chart
+    const correlationData = {{ charts.correlation | safe }};
+    Plotly.newPlot('correlationChart', correlationData.data, correlationData.layout, {responsive: true});
+    
+    // Volatility Chart
+    const volatilityData = {{ charts.volatility | safe }};
+    Plotly.newPlot('volatilityChart', volatilityData.data, volatilityData.layout, {responsive: true});
+}
+
+function trainModels() {
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    document.getElementById('loadingText').textContent = 'Training ML Models...';
+    document.getElementById('loadingSubtext').textContent = 'This may take several minutes. Please be patient.';
+    modal.show();
+    
+    const formData = new FormData();
+    formData.append('symbol', '{{ symbol }}');
+    
+    fetch('/train_models', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        modal.hide();
+        if (data.success) {
+            // Update UI with model performance
+            updateModelPerformance(data);
+            
+            // Show success message
+            showAlert('success', `Successfully trained ${data.models_trained} models!`);
+            
+            // Switch to prediction tab
+            document.getElementById('prediction-tab').click();
+        } else {
+            showAlert('danger', 'Error training models: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        modal.hide();
+        showAlert('danger', 'Error: ' + error.message);
+    });
+}
+
+function makePrediction() {
+    const selectedModel = document.getElementById('modelSelect').value;
+    
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    document.getElementById('loadingText').textContent = 'Making Prediction...';
+    document.getElementById('loadingSubtext').textContent = `Using ${selectedModel} model to predict next day direction.`;
+    modal.show();
+    
+    const formData = new FormData();
+    formData.append('symbol', '{{ symbol }}');
+    formData.append('model_name', selectedModel);
+    
+    fetch('/predict', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        modal.hide();
+        if (data.success) {
+            // Update prediction display
+            updatePredictionDisplay(data.prediction);
+            
+            // Update prediction chart if available
+            if (data.chart) {
+                const chartData = JSON.parse(data.chart);
+                document.getElementById('predictionChart').innerHTML = '<div id="predictionChartPlot"></div>';
+                Plotly.newPlot('predictionChartPlot', chartData.data, chartData.layout, {responsive: true});
+            }
+            
+            showAlert('success', 'Prediction completed successfully!');
+        } else {
+            showAlert('danger', 'Error making prediction: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        modal.hide();
+        showAlert('danger', 'Error: ' + error.message);
+    });
+}
+
+function updateModelPerformance(data) {
+    const performanceDiv = document.getElementById('performanceMetrics');
+    let html = '';
+    
+    if (data.performance && data.best_model) {
+        const bestModelPerf = data.performance[data.best_model];
+        html += `<div class="mb-2"><strong>Best Model:</strong> ${data.best_model}</div>`;
+        html += `<div class="mb-1">Accuracy: <span class="badge bg-primary">${(bestModelPerf.accuracy * 100).toFixed(1)}%</span></div>`;
+        html += `<div class="mb-1">Precision: <span class="badge bg-success">${(bestModelPerf.precision * 100).toFixed(1)}%</span></div>`;
+        html += `<div class="mb-1">Recall: <span class="badge bg-info">${(bestModelPerf.recall * 100).toFixed(1)}%</span></div>`;
+        html += `<div class="mb-1">F1-Score: <span class="badge bg-warning">${(bestModelPerf.f1_score * 100).toFixed(1)}%</span></div>`;
+    }
+    
+    performanceDiv.innerHTML = html;
+    document.getElementById('modelPerformance').style.display = 'block';
+}
+
+function updatePredictionDisplay(prediction) {
+    document.getElementById('predictionDirection').textContent = prediction.direction;
+    document.getElementById('predictionDirection').style.color = prediction.direction === 'UP' ? 'lightgreen' : 'lightcoral';
+    
+    document.getElementById('predictionDetails').textContent = 
+        `Based on ${prediction.model} analysis`;
+    
+    if (prediction.confidence) {
+        document.getElementById('predictionConfidence').textContent = 
+            `Confidence: ${(prediction.confidence * 100).toFixed(1)}%`;
+    }
+    
+    document.getElementById('predictionResult').style.display = 'block';
+}
+
+function showAlert(type, message) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // Insert at the top of the content
+    const container = document.querySelector('main.container');
+    container.insertAdjacentHTML('afterbegin', alertHtml);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        const alert = container.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+
+// Make charts responsive
+window.addEventListener('resize', function() {
+    Plotly.Plots.resize('candlestickChart');
+    Plotly.Plots.resize('indicatorsChart');
+    Plotly.Plots.resize('returnsChart');
+    Plotly.Plots.resize('correlationChart');
+    Plotly.Plots.resize('volatilityChart');
+});
+</script>
+{% endblock %}
