@@ -19,6 +19,78 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DataFetcher:
+    def _init_database(self):
+        """Initialize SQLite database for storing stock data and predictions."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        # Create stocks table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                date DATE NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, date)
+            )
+        ''')
+        # Create predictions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                date DATE NOT NULL,
+                model TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                confidence REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("Database initialized successfully")
+
+    def save_prediction(self, symbol: str, date, model: str, direction: str, confidence: float):
+        """Save a prediction to the database."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO predictions (symbol, date, model, direction, confidence)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (symbol, date, model, direction, confidence)
+            )
+            conn.commit()
+            conn.close()
+            logger.info(f"Saved prediction for {symbol} on {date} using {model}")
+        except Exception as e:
+            logger.error(f"Error saving prediction for {symbol}: {str(e)}")
+
+    def get_past_predictions(self, symbol: str, limit: int = 20):
+        """Fetch past predictions for a symbol."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT date, model, direction, confidence, created_at
+                FROM predictions WHERE symbol = ?
+                ORDER BY date DESC, created_at DESC LIMIT ?
+                """,
+                (symbol, limit)
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+        except Exception as e:
+            logger.error(f"Error fetching past predictions for {symbol}: {str(e)}")
+            return []
     def clear_symbol_cache(self, symbol: str):
         """
         Delete all cached data for a specific stock symbol.
@@ -52,31 +124,6 @@ class DataFetcher:
     def _ensure_data_directory(self):
         """Create data directory if it doesn't exist."""
         os.makedirs(Config.DATA_DIR, exist_ok=True)
-    
-    def _init_database(self):
-        """Initialize SQLite database for storing stock data."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create stocks table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stocks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                date DATE NOT NULL,
-                open REAL NOT NULL,
-                high REAL NOT NULL,
-                low REAL NOT NULL,
-                close REAL NOT NULL,
-                volume INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(symbol, date)
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        logger.info("Database initialized successfully")
     
     def fetch_alpha_vantage_data(self, symbol: str, outputsize: str = 'full') -> Optional[pd.DataFrame]:
         """

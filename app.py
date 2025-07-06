@@ -180,24 +180,52 @@ def predict():
         
         # Make prediction
         prediction_result = predictor.predict_next_day(model, data, model_name)
-        
+
+        # Save prediction to database
+        from src.data_fetcher import DataFetcher
+        data_fetcher = DataFetcher()
+        data_fetcher.save_prediction(
+            symbol=symbol,
+            date=str(prediction_result['timestamp'].date()),
+            model=model_name,
+            direction=prediction_result['direction'],
+            confidence=prediction_result['confidence']
+        )
+
         # Create prediction chart
-        # For demo, create a simple prediction visualization
         predictions_series = pd.Series([prediction_result['prediction']], 
                                      index=[data.index[-1]])
         prediction_chart = visualizer.create_prediction_chart(
             data.tail(30), predictions_series, symbol, model_name
         )
-        
+
         return jsonify({
             'success': True,
             'prediction': prediction_result,
             'chart': json.dumps(prediction_chart, cls=plotly.utils.PlotlyJSONEncoder)
         })
-        
     except Exception as e:
         logger.error(f"Error making prediction: {str(e)}")
         return jsonify({'error': str(e)})
+
+# Route to fetch past predictions for a symbol (must be at top-level, not inside a function)
+@app.route('/past_predictions/<symbol>')
+def past_predictions(symbol):
+    from src.data_fetcher import DataFetcher
+    data_fetcher = DataFetcher()
+    rows = data_fetcher.get_past_predictions(symbol)
+    # Format for JSON
+    predictions = [
+        {
+            'symbol': symbol,
+            'date': r[0],
+            'model': r[1],
+            'direction': r[2],
+            'confidence': r[3],
+            'created_at': r[4]
+        } for r in rows
+    ]
+    return jsonify({'predictions': predictions})
 
 @app.route('/api/stock_info/<symbol>')
 def stock_info(symbol):

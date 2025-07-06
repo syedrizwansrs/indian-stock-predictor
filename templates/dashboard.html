@@ -3,6 +3,14 @@
 {% block title %}Dashboard - Indian Stock Market Predictor{% endblock %}
 
 {% block content %}
+</script>
+<script>
+// Expose stocks to JS for modal logic
+window.stocks = {{ stocks|map(attribute='symbol')|list|tojson }};
+window.stocks = window.stocks.map(s => ({ symbol: s }));
+</script>
+</script>
+</script>
 <div class="row">
     <div class="col-12">
         <!-- Dashboard Header -->
@@ -15,6 +23,38 @@
                 <button class="btn btn-success" onclick="refreshAll()">
                     <i class="fas fa-sync-alt me-1"></i>Refresh All
                 </button>
+                <button class="btn btn-info" onclick="showPastPredictionsModal()">
+                    <i class="fas fa-history me-1"></i>View Past Predictions
+                </button>
+            </div>
+        </div>
+
+        <!-- Past Predictions Modal -->
+        <div class="modal fade" id="pastPredictionsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fas fa-history me-2"></i>Past Predictions
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="pastPredictionsContent">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary mb-3" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p>Loading past predictions...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
             </div>
         </div>
 
@@ -281,5 +321,42 @@ setInterval(function() {
     // You could implement a more sophisticated refresh here
     // that only updates the data without reloading the page
 }, 300000); // 5 minutes
+
+// Past Predictions Modal logic
+function showPastPredictionsModal() {
+    // Build dropdown for stock selection
+    let symbolOptions = window.stocks.map(s => `<option value="${s.symbol}">${s.symbol}</option>`).join('');
+    let dropdown = `<div class='mb-3'><label for='pastPredictionsSymbol' class='form-label'>Select Stock:</label><select id='pastPredictionsSymbol' class='form-select'>${symbolOptions}</select></div>`;
+    const modal = new bootstrap.Modal(document.getElementById('pastPredictionsModal'));
+    modal.show();
+    document.getElementById('pastPredictionsContent').innerHTML = dropdown + `<div id='pastPredictionsTableArea'><div class=\"text-center\"><div class=\"spinner-border text-primary mb-3\" role=\"status\"><span class=\"visually-hidden\">Loading...</span></div><p>Loading past predictions...</p></div></div>`;
+    // Load predictions for the first symbol
+    let currentSymbol = window.stocks.length > 0 ? window.stocks[0].symbol : null;
+    if (currentSymbol) loadPastPredictions(currentSymbol);
+    document.getElementById('pastPredictionsSymbol').addEventListener('change', function() {
+        loadPastPredictions(this.value);
+    });
+}
+
+function loadPastPredictions(symbol) {
+    document.getElementById('pastPredictionsTableArea').innerHTML = `<div class=\"text-center\"><div class=\"spinner-border text-primary mb-3\" role=\"status\"><span class=\"visually-hidden\">Loading...</span></div><p>Loading past predictions for ${symbol}...</p></div>`;
+    fetch(`/past_predictions/${symbol}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.predictions && data.predictions.length > 0) {
+                let table = `<table class=\"table table-striped\"><thead><tr><th>Symbol</th><th>Date</th><th>Model</th><th>Direction</th><th>Confidence</th><th>Created At</th></tr></thead><tbody>`;
+                data.predictions.forEach(pred => {
+                    table += `<tr><td>${pred.symbol}</td><td>${pred.date}</td><td>${pred.model}</td><td>${pred.direction}</td><td>${pred.confidence !== null ? (pred.confidence * 100).toFixed(1) + '%' : 'N/A'}</td><td>${pred.created_at}</td></tr>`;
+                });
+                table += `</tbody></table>`;
+                document.getElementById('pastPredictionsTableArea').innerHTML = table;
+            } else {
+                document.getElementById('pastPredictionsTableArea').innerHTML = `<div class='alert alert-info'>No past predictions found for ${symbol}.</div>`;
+            }
+        })
+        .catch(() => {
+            document.getElementById('pastPredictionsTableArea').innerHTML = `<div class='alert alert-danger'>Failed to load past predictions.</div>`;
+        });
+}
 </script>
 {% endblock %}
