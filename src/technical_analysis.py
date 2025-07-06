@@ -251,7 +251,8 @@ class TechnicalAnalyzer:
         cci_period = 20
         tp = (data['high'] + data['low'] + data['close']) / 3  # Typical price
         sma_tp = tp.rolling(window=cci_period).mean()
-        mad = tp.rolling(window=cci_period).apply(lambda x: pd.Series(x).mad(), raw=False)
+        # Use mean absolute deviation manually, since pd.Series.mad() is deprecated/removed
+        mad = tp.rolling(window=cci_period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
         result['CCI'] = (tp - sma_tp) / (0.015 * mad)
         
         # Momentum - Manual calculation

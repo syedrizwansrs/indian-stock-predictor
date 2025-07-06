@@ -116,8 +116,8 @@ class StockPredictor:
         """
         logger.info("Preparing data for machine learning...")
         
-        # Remove rows with NaN values
-        clean_data = data.dropna()
+        # Replace inf/-inf with NaN, then remove rows with NaN values
+        clean_data = data.replace([np.inf, -np.inf], np.nan).dropna()
         
         if clean_data.empty:
             raise ValueError("No clean data available after removing NaN values")
@@ -147,6 +147,8 @@ class StockPredictor:
         logger.info(f"Target distribution - Train: {y_train.value_counts().to_dict()}")
         logger.info(f"Target distribution - Test: {y_test.value_counts().to_dict()}")
         
+        # Store feature names for later prediction
+        self.last_feature_names = feature_cols
         return X_train, X_test, y_train, y_test, feature_cols
     
     def scale_features(self, X_train: pd.DataFrame, X_test: pd.DataFrame, 
@@ -554,9 +556,15 @@ class StockPredictor:
         Returns:
             Dict[str, Any]: Prediction results
         """
-        # Get the last row of features
-        features = latest_data.tail(1)
-        
+        # Get the last row and select only the features used during training
+        feature_names = getattr(self, 'last_feature_names', None)
+        if feature_names is None:
+            # Fallback: try to infer from model or use all columns except known non-features
+            exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'Target', 'Target_Return', 'Target_Price']
+            feature_names = [col for col in latest_data.columns if col not in exclude_cols]
+
+        features = latest_data[feature_names].tail(1)
+
         # Scale features if needed
         if model_name in ['logistic_regression', 'svm'] and 'standard' in self.scalers:
             features_scaled = pd.DataFrame(
@@ -565,11 +573,11 @@ class StockPredictor:
             )
         else:
             features_scaled = features
-        
+
         # Make prediction
         prediction = model.predict(features_scaled)[0]
         prediction_proba = model.predict_proba(features_scaled)[0] if hasattr(model, 'predict_proba') else None
-        
+
         result = {
             'prediction': int(prediction),
             'direction': 'UP' if prediction == 1 else 'DOWN',
@@ -577,7 +585,7 @@ class StockPredictor:
             'model': model_name,
             'timestamp': latest_data.index[-1]
         }
-        
+
         return result
     
     def get_model_comparison(self) -> pd.DataFrame:

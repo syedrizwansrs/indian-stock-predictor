@@ -157,8 +157,12 @@ class DataFetcher:
             data_to_insert['symbol'] = symbol
             data_to_insert = data_to_insert.reset_index()
             
-            # Insert data (ignore duplicates)
-            data_to_insert.to_sql('stocks', conn, if_exists='append', index=False, method='ignore')
+            # Insert data (ignore duplicates) - method='ignore' is not supported by pandas to_sql for sqlite
+            # Instead, use try/except for duplicate handling or use 'if_exists' and primary key constraints
+            try:
+                data_to_insert.to_sql('stocks', conn, if_exists='append', index=False)
+            except Exception as e:
+                logger.error(f"Error inserting data to database for {symbol}: {str(e)}")
             
             conn.close()
             logger.info(f"Saved {len(data)} records for {symbol} to database")

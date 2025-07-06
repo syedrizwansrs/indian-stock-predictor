@@ -11,7 +11,7 @@ class Config:
     """Configuration class for managing API keys and settings."""
     
     # API Configuration
-    ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY', 'demo')
+    ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY', 'Q0DIW81MMLWGUY8K')
     
     # Database Configuration
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'stocks.db')
