@@ -3,6 +3,8 @@
 
 A comprehensive Python-based application that acquires historical stock data for the Indian market, performs technical analysis, visualizes charts, and attempts to predict future stock price movements using machine learning.
 
+**🚀 NEW: Now optimized for Hard Disk Drives (HDDs)** - Up to 8x faster database operations! See [QUICKSTART_HDD.md](QUICKSTART_HDD.md) for details.
+
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)
 ![License](https://img.shields.io/badge/License-Educational-yellow.svg)

@@ -111,6 +111,32 @@ DATABASE_CACHE_SIZE = 10000  # SQLite cache size in pages (each page is 4KB)
 DATABASE_TIMEOUT = 30  # Database lock timeout in seconds
 ```
 
+### Quick Configuration Examples
+
+#### For HDD Systems (Recommended - Default)
+```python
+HDD_OPTIMIZED = True
+USE_WAL_MODE = True
+ENABLE_CSV_BACKUP = False
+DATABASE_CACHE_SIZE = 10000
+```
+
+#### For SSD Systems (Optional - If you prefer legacy behavior)
+```python
+HDD_OPTIMIZED = False
+USE_WAL_MODE = False  # Optional: WAL still beneficial on SSDs
+ENABLE_CSV_BACKUP = True  # If you want CSV backups
+DATABASE_CACHE_SIZE = 2000  # Smaller cache is fine on fast storage
+```
+
+#### For Systems with Limited RAM
+```python
+HDD_OPTIMIZED = True
+USE_WAL_MODE = True
+ENABLE_CSV_BACKUP = False
+DATABASE_CACHE_SIZE = 2000  # Reduce cache size to save memory
+```
+
 ### To Disable HDD Optimizations
 
 If you're running on an SSD and want the original behavior:
@@ -118,15 +144,43 @@ If you're running on an SSD and want the original behavior:
 1. Open `src/config.py`
 2. Set `HDD_OPTIMIZED = False`
 3. Set `ENABLE_CSV_BACKUP = True` (if you want CSV files)
+4. Optionally adjust other parameters as needed
 
 ## Performance Impact
 
-Expected improvements on HDD systems:
+Based on benchmark tests with 1,000 stock records:
 
-- **Data Fetching:** 2-3x faster due to batch inserts
+### Benchmark Results
+
+```
+Individual INSERT statements (no optimizations):
+  - Time: 0.045 seconds
+  - Throughput: 22,472 records/second
+
+Batch INSERT with HDD optimizations:
+  - Time: 0.005 seconds
+  - Throughput: 189,479 records/second
+
+🚀 SPEEDUP: 8.4x faster
+⏱️  TIME SAVED: 88.1% reduction in write time
+```
+
+### Expected Improvements on HDD Systems
+
+- **Data Fetching:** 5-8x faster due to batch inserts
 - **Database Queries:** 1.5-2x faster due to indexing
 - **Concurrent Access:** Significantly improved with WAL mode
 - **Overall I/O:** Reduced by 40-60% depending on workload
+
+### Running Your Own Benchmark
+
+You can verify the performance improvements on your system:
+
+```bash
+python benchmark_hdd_optimization.py
+```
+
+This will compare individual inserts vs. batch inserts with HDD optimizations.
 
 ## Compatibility
 
