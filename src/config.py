@@ -51,3 +51,11 @@ class Config:
     
     # API Rate Limiting
     API_CALL_DELAY = 12  # seconds between API calls (Alpha Vantage free tier: 5 calls per minute)
+    
+    # HDD Optimization Settings
+    HDD_OPTIMIZED = True  # Enable HDD-friendly optimizations
+    USE_WAL_MODE = True  # Use Write-Ahead Logging for better concurrency
+    BATCH_INSERT_SIZE = 500  # Number of rows to insert in a single batch
+    ENABLE_CSV_BACKUP = False  # Disable CSV writes to reduce I/O (can be enabled if needed)
+    DATABASE_CACHE_SIZE = 10000  # SQLite cache size in pages (each page is 4KB by default)
+    DATABASE_TIMEOUT = 30  # Database lock timeout in seconds

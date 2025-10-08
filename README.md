@@ -3,6 +3,8 @@
 
 A comprehensive Python-based application that acquires historical stock data for the Indian market, performs technical analysis, visualizes charts, and attempts to predict future stock price movements using machine learning.
 
+**🚀 NEW: Now optimized for Hard Disk Drives (HDDs)** - Up to 8x faster database operations! See [QUICKSTART_HDD.md](QUICKSTART_HDD.md) for details.
+
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)
 ![License](https://img.shields.io/badge/License-Educational-yellow.svg)
@@ -14,6 +16,7 @@ A comprehensive Python-based application that acquires historical stock data for
 - **Indian market focus**: NSE/BSE stocks including NIFTY 50 and SENSEX 30
 - **Local storage**: SQLite database with CSV backup for efficient data management
 - **Automatic updates**: Smart data refresh with rate limiting compliance
+- **HDD optimized**: Batch inserts, WAL mode, and indexing for optimal performance on slower drives
 
 ### 📈 Technical Analysis
 - **Comprehensive indicators**: SMA, EMA, RSI, MACD, Bollinger Bands, ATR, OBV
@@ -197,6 +200,20 @@ BOLLINGER_PERIOD = 20
 ### Machine Learning Parameters
 ```python
 TRAIN_TEST_SPLIT_RATIO = 0.8
+RANDOM_STATE = 42
+```
+
+### HDD Optimization Settings
+```python
+# Optimized for slower storage devices like HDDs
+HDD_OPTIMIZED = True  # Enable HDD-friendly optimizations
+USE_WAL_MODE = True  # Write-Ahead Logging for better concurrency
+BATCH_INSERT_SIZE = 500  # Batch insert operations
+ENABLE_CSV_BACKUP = False  # Skip CSV writes to reduce I/O
+DATABASE_CACHE_SIZE = 10000  # Larger cache for fewer disk reads
+```
+
+For detailed information about HDD optimizations, see [HDD_OPTIMIZATION.md](HDD_OPTIMIZATION.md)
 RANDOM_STATE = 42
 ```
 

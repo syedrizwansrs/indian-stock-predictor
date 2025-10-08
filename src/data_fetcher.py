@@ -22,8 +22,23 @@ logger = logging.getLogger(__name__)
 class DataFetcher:
     def _init_database(self):
         """Initialize SQLite database for storing stock data and predictions."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=Config.DATABASE_TIMEOUT)
         cursor = conn.cursor()
+        
+        # Enable HDD optimizations if configured
+        if Config.HDD_OPTIMIZED:
+            if Config.USE_WAL_MODE:
+                # Write-Ahead Logging mode for better concurrent access and less disk I/O
+                cursor.execute("PRAGMA journal_mode=WAL")
+            
+            # Increase cache size for better performance
+            cursor.execute(f"PRAGMA cache_size={Config.DATABASE_CACHE_SIZE}")
+            
+            # Synchronous=NORMAL is faster than FULL and still safe with WAL
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            
+            logger.info("HDD optimizations enabled: WAL mode, increased cache, optimized sync")
+        
         # Create stocks table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS stocks (
@@ -39,6 +54,17 @@ class DataFetcher:
                 UNIQUE(symbol, date)
             )
         ''')
+        
+        # Create indexes for better query performance on HDD
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_stocks_symbol_date 
+            ON stocks(symbol, date DESC)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_stocks_symbol 
+            ON stocks(symbol)
+        ''')
+        
         # Create predictions table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS predictions (
@@ -51,14 +77,21 @@ class DataFetcher:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # Create index for predictions
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_predictions_symbol_date 
+            ON predictions(symbol, date DESC)
+        ''')
+        
         conn.commit()
         conn.close()
-        logger.info("Database initialized successfully")
+        logger.info("Database initialized successfully with HDD optimizations")
 
     def save_prediction(self, symbol: str, date, model: str, direction: str, confidence: float):
         """Save a prediction to the database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -76,7 +109,7 @@ class DataFetcher:
     def get_past_predictions(self, symbol: str, limit: int = 20):
         """Fetch past predictions for a symbol."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -99,7 +132,7 @@ class DataFetcher:
             symbol (str): Stock symbol to clear from cache
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM stocks WHERE symbol = ?", (symbol,))
             conn.commit()
@@ -121,6 +154,26 @@ class DataFetcher:
         self.db_path = Config.DATABASE_PATH
         self._ensure_data_directory()
         self._init_database()
+    
+    def _get_db_connection(self):
+        """
+        Get a database connection with HDD optimizations applied.
+        
+        Returns:
+            sqlite3.Connection: Database connection
+        """
+        conn = sqlite3.connect(self.db_path, timeout=Config.DATABASE_TIMEOUT)
+        
+        if Config.HDD_OPTIMIZED:
+            cursor = conn.cursor()
+            # Apply optimizations on every connection
+            if Config.USE_WAL_MODE:
+                cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA cache_size={Config.DATABASE_CACHE_SIZE}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+        
+        return conn
     
     def _ensure_data_directory(self):
         """Create data directory if it doesn't exist."""
@@ -206,53 +259,97 @@ class DataFetcher:
     
     def save_to_database(self, symbol: str, data: pd.DataFrame):
         """
-        Save stock data to SQLite database, preventing true duplicates.
+        Save stock data to SQLite database using batch inserts for HDD optimization.
         
         Args:
             symbol (str): Stock symbol
             data (pd.DataFrame): Stock data to save
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             cursor = conn.cursor()
+            
             # Prepare data for insertion
             data_to_insert = data.copy()
             data_to_insert['symbol'] = symbol
             data_to_insert = data_to_insert.reset_index()
-            # Insert each row, skipping duplicates
-            inserted = 0
+            
+            # Prepare batch insert data
+            rows_to_insert = []
             for _, row in data_to_insert.iterrows():
                 try:
                     # Ensure date is a string in YYYY-MM-DD format
                     date_val = row['date']
                     if pd.isnull(date_val):
-                        date_str = None
+                        continue  # Skip rows with null dates
                     elif hasattr(date_val, 'strftime'):
                         date_str = date_val.strftime('%Y-%m-%d')
                     else:
                         date_str = str(date_val)
-                    cursor.execute(
+                    
+                    row_tuple = (
+                        row['symbol'],
+                        date_str,
+                        row['open'] if not pd.isnull(row['open']) else None,
+                        row['high'] if not pd.isnull(row['high']) else None,
+                        row['low'] if not pd.isnull(row['low']) else None,
+                        row['close'] if not pd.isnull(row['close']) else None,
+                        int(row['volume']) if not pd.isnull(row['volume']) else None
+                    )
+                    rows_to_insert.append(row_tuple)
+                except Exception as e:
+                    logger.error(f"Error preparing row for {symbol} on {row['date']}: {str(e)}")
+                    continue
+            
+            # Batch insert with transaction for HDD optimization
+            inserted = 0
+            if Config.HDD_OPTIMIZED:
+                # Use INSERT OR IGNORE for batch operations (faster on HDD)
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    cursor.executemany(
                         """
-                        INSERT INTO stocks (symbol, date, open, high, low, close, volume)
+                        INSERT OR IGNORE INTO stocks (symbol, date, open, high, low, close, volume)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (
-                            row['symbol'],
-                            date_str,
-                            row['open'] if not pd.isnull(row['open']) else None,
-                            row['high'] if not pd.isnull(row['high']) else None,
-                            row['low'] if not pd.isnull(row['low']) else None,
-                            row['close'] if not pd.isnull(row['close']) else None,
-                            int(row['volume']) if not pd.isnull(row['volume']) else None
-                        )
+                        rows_to_insert
                     )
-                    inserted += 1
-                except sqlite3.IntegrityError:
-                    # Duplicate entry, skip
-                    continue
+                    inserted = cursor.rowcount
+                    conn.commit()
+                    logger.info(f"Batch inserted {inserted} new records for {symbol} to database")
                 except Exception as e:
-                    logger.error(f"Error inserting row for {symbol} on {row['date']}: {str(e)}")
-            conn.commit()
+                    conn.rollback()
+                    logger.error(f"Batch insert failed, falling back to individual inserts: {str(e)}")
+                    # Fallback to individual inserts if batch fails
+                    for row_tuple in rows_to_insert:
+                        try:
+                            cursor.execute(
+                                """
+                                INSERT INTO stocks (symbol, date, open, high, low, close, volume)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                row_tuple
+                            )
+                            inserted += 1
+                        except sqlite3.IntegrityError:
+                            continue  # Duplicate entry
+                    conn.commit()
+            else:
+                # Original individual insert logic for compatibility
+                for row_tuple in rows_to_insert:
+                    try:
+                        cursor.execute(
+                            """
+                            INSERT INTO stocks (symbol, date, open, high, low, close, volume)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            row_tuple
+                        )
+                        inserted += 1
+                    except sqlite3.IntegrityError:
+                        continue  # Duplicate entry
+                conn.commit()
+            
             conn.close()
             logger.info(f"Saved {inserted} new records for {symbol} to database (duplicates skipped)")
         except Exception as e:
@@ -260,12 +357,17 @@ class DataFetcher:
     
     def save_to_csv(self, symbol: str, data: pd.DataFrame):
         """
-        Save stock data to CSV file.
+        Save stock data to CSV file (optional for HDD optimization).
         
         Args:
             symbol (str): Stock symbol
             data (pd.DataFrame): Stock data to save
         """
+        # Skip CSV writes if HDD optimization is enabled and CSV backup is disabled
+        if Config.HDD_OPTIMIZED and not Config.ENABLE_CSV_BACKUP:
+            logger.info(f"Skipping CSV write for {symbol} (HDD optimization mode)")
+            return
+        
         try:
             filename = f"{symbol.replace('.', '_')}_daily.csv"
             filepath = os.path.join(Config.DATA_DIR, filename)
@@ -288,7 +390,7 @@ class DataFetcher:
             pd.DataFrame: Stock data
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             
             query = "SELECT date, open, high, low, close, volume FROM stocks WHERE symbol = ?"
             params = [symbol]
@@ -362,7 +464,7 @@ class DataFetcher:
             datetime: Latest data date
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute(
